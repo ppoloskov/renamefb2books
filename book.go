@@ -3,13 +3,12 @@ package main
 import (
 	"encoding/xml"
 	"fmt"
+	"github.com/paulrosania/go-charset/charset"
+	_ "github.com/paulrosania/go-charset/data"
 	"os"
 	"strings"
 	"unicode"
 	"unicode/utf8"
-
-	"code.google.com/p/go-charset/charset"
-	_ "code.google.com/p/go-charset/data"
 )
 
 type Book struct {

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/ryanuber/go-glob"
 	"os"
-	"os/user"
 	"path"
 	"path/filepath"
 	"sort"
@@ -55,7 +54,6 @@ func NormalizeSpaces(arr string) string {
 }
 
 func fingerprint(author Person) string {
-	// bgram := map[string]struct{}{}
 	// myString := author.Lname + author.Fname + author.Mname
 	// var arr []string
 
@@ -89,10 +87,6 @@ func fingerprint(author Person) string {
 	return strings.Join(list, "")
 }
 
-func opendb() {
-	return
-}
-
 func findfiles(searchpath string, out chan string) {
 	go func() {
 		filepath.Walk(searchpath, func(path string, f os.FileInfo, _ error) error {
@@ -121,28 +115,7 @@ func worker(ID int, files chan string, out chan *Book, wg *sync.WaitGroup) { //,
 	// wg.Done()
 }
 
-func main() {
-	flag.Parse()
-	root := flag.Arg(0)
-	FilesQueue := make(chan string)
-	BooksQueue := make(chan *Book)
-	if root == "" {
-		usr, _ := user.Current()
-		root = usr.HomeDir
-	}
-	fmt.Println("Looking for files in ", root)
-
-	wg := &sync.WaitGroup{}
-	for i := 0; i < 5; i++ {
-		go worker(i, FilesQueue, BooksQueue, wg)
-		wg.Add(1)
-	}
-	findfiles(root, FilesQueue)
-	GoodBooks := []*Book{}
-	ErrorBooks := []*Book{}
-	// alist := authorSlice{}
-	authorslist := map[string]int{}
-	seqlist := map[string]int{}
+func repl(b Book) {
 
 	var DirectMatch = make(map[string]string)
 	var WildMatch = make(map[string]string)
@@ -157,6 +130,57 @@ func main() {
 		}
 
 	}
+	gen := ""
+	ok := false
+	if len(b.Genres) > 0 {
+		for _, bookgenre := range b.Genres {
+			if len(bookgenre) == 0 {
+				continue
+			}
+			gen, ok = DirectMatch[bookgenre]
+			if ok {
+				break
+			}
+			for wild := range WildMatch {
+				if glob.Glob(wild, bookgenre) {
+					gen = WildMatch[wild]
+					ok = true
+					break
+				}
+			}
+			if ok {
+				break
+			}
+		}
+	}
+	if gen == "" {
+		fmt.Printf("Just got: '%s - %s'\n", b.Title, b.Genres)
+	} else {
+		fmt.Printf("Just got: '%s - %s'\n", b.Title, gen)
+	}
+}
+func main() {
+	root := flag.String("r", ".", "Path to unsorted books")
+	checkauthors := flag.Bool("A", false, "Scan books for authors and generate lists of corrections")
+	//rename := flag.Bool("R", false, "Rename founded files")
+
+	flag.Parse()
+
+	FilesQueue := make(chan string)
+	BooksQueue := make(chan *Book)
+	fmt.Println("Looking for files in ", *root)
+
+	wg := &sync.WaitGroup{}
+	for i := 0; i < 5; i++ {
+		go worker(i, FilesQueue, BooksQueue, wg)
+		wg.Add(1)
+	}
+	findfiles(*root, FilesQueue)
+	GoodBooks := []*Book{}
+	ErrorBooks := []*Book{}
+	// alist := authorSlice{}
+	AuthorsCounter := map[Person]int{}
+	seqlist := map[string]int{}
 
 	go func() {
 		for b := range BooksQueue {
@@ -164,36 +188,8 @@ func main() {
 				ErrorBooks = append(ErrorBooks, b)
 			} else {
 				GoodBooks = append(GoodBooks, b)
-				gen := ""
-				ok := false
-				if len(b.Genres) > 0 {
-					for _, bookgenre := range b.Genres {
-						if len(bookgenre) == 0 {
-							continue
-						}
-						gen, ok = DirectMatch[bookgenre]
-						if ok {
-							break
-						}
-						for wild := range WildMatch {
-							if glob.Glob(wild, bookgenre) {
-								gen = WildMatch[wild]
-								ok = true
-								break
-							}
-						}
-						if ok {
-							break
-						}
-					}
-				}
-				if gen == "" {
-					fmt.Printf("Just got: '%s - %s'\n", b.Title, b.Genres)
-				} else {
-					fmt.Printf("Just got: '%s - %s'\n", b.Title, gen)
-				}
 				for _, author := range b.Authors {
-					authorslist[author.ToString()]++
+					AuthorsCounter[author]++
 				}
 				for _, s := range b.Sequences {
 					seqlist[s.Name]++
@@ -211,6 +207,10 @@ func main() {
 		fmt.Printf("Error in book: %s - %s\n", path.Base(book.Path), book.Error)
 	}
 	fmt.Printf("Found %d books and %d books with errors\n", len(GoodBooks), len(ErrorBooks))
+
+	if *checkauthors {
+		jsonExport(AuthorsCounter, "a.json")
+	}
 	// //Initialize scroll bar and scan for files
 	// // for _, boo := range books {
 	// 	output, _ := xml.MarshalIndent(boo, "  ", "    ")

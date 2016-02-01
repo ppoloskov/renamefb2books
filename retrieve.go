@@ -301,7 +301,7 @@ var (
 	}
 )
 
-func (book *Book) SearchLitMir() {
+func (book *Book) SearchLitMir(url string) {
 	// 	walk("http://www.litmir.co/bd/?b=253328", b)
 	resp, err := http.Get(url)
 	if err != nil {
@@ -351,7 +351,7 @@ func (book *Book) SearchLitMir() {
 // 	fmt.Printf("Series: '%s'\n", b.Sequences)
 // 	fmt.Printf("Genres: '%s'\n", b.Genres)
 //
-func SearchLibRusEc(book *Book) *book {
+func SearchLibRusEc(book *Book) {
 	// doc, err := goquery.NewDocument("http://lib.rus.ec/b/553014")
 	// if err != nil {
 	// log.Fatal(err)
@@ -426,6 +426,7 @@ func SearchLibRusEc(book *Book) *book {
 	// 		}
 	// 	}
 	// }
+
 }
 
 // }
