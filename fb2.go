@@ -3,14 +3,16 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/ryanuber/go-glob"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
-	"unicode"
+
+	"github.com/ryanuber/go-glob"
 )
 
 type authorSlice []Person
@@ -40,11 +42,11 @@ func (a authorSlice) Exists(Author Person) bool {
 }
 
 // var alist = make(map[string]*Author)
-
 // var a = make(map[Author]struct{})
+
 func NormalizeSpaces(arr string) string {
 	out := []string{}
-	for i, _ := range arr {
+	for i := range arr {
 		n := string(arr[i])
 		if strings.TrimSpace(n) != "" {
 			out = append(out, n)
@@ -53,31 +55,18 @@ func NormalizeSpaces(arr string) string {
 	return strings.Join(out, " ")
 }
 
-func fingerprint(author Person) string {
-	// myString := author.Lname + author.Fname + author.Mname
-	// var arr []string
+func (author Person) Fingerprint() string {
+	// List of unique B-Grams
+	bgram := make(map[string]bool)
+	reg, err := regexp.Compile("[^A-Za-zА-Яа-я]+")
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	// for _, value := range myString {
-	// 	if unicode.IsLetter(value) {
-	// 		arr = append(arr, strings.ToLower(string(value)))
-	// 	}
-	// }
-	// for i := 0; i < len(arr)-1; i++ {
-	// 	bgram[strings.Join(arr[i:i+2], "")] = struct{}{}
-	// }
-	// list := []string{}
-	// for i, _ := range bgram {
-	// 	list = append(list, string(i))
-	// }
-	// sort.Strings(list)
-	// return strings.Join(list, "")
-	bgram := map[string]struct{}{}
-	myString := author.Lname + author.Fname
+	myStringRunes := []rune(reg.ReplaceAllString(strings.ToLower(author.Lname+author.Fname), ""))
 
-	for _, value := range myString {
-		if unicode.IsLetter(value) {
-			bgram[strings.ToLower(string(value))] = struct{}{}
-		}
+	for i, j := 0, 2; j < len(myStringRunes); i, j = i+1, j+1 {
+		bgram[string(myStringRunes[i:j])] = true
 	}
 	list := []string{}
 	for i, _ := range bgram {
@@ -179,7 +168,7 @@ func main() {
 	GoodBooks := []*Book{}
 	ErrorBooks := []*Book{}
 	// alist := authorSlice{}
-	AuthorsCounter := map[Person]int{}
+	AuthorsCounter := map[string][]Person{}
 	seqlist := map[string]int{}
 
 	go func() {
@@ -189,7 +178,8 @@ func main() {
 			} else {
 				GoodBooks = append(GoodBooks, b)
 				for _, author := range b.Authors {
-					AuthorsCounter[author]++
+					fmt.Println(author.Fname + " " + author.Lname)
+					AuthorsCounter[author.Fingerprint()] = append(AuthorsCounter[author.Fingerprint()], author)
 				}
 				for _, s := range b.Sequences {
 					seqlist[s.Name]++
