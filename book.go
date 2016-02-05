@@ -53,15 +53,6 @@ var Translated = func(b Book) bool {
 	}
 }
 
-type Person struct {
-	Fname string `xml:"first-name"`
-	Mname string `xml:"middle-name"`
-	Lname string `xml:"last-name"`
-	Nick  string `xml:"nickname"`
-	Email string `xml:"email"`
-	Id    string `xml:"id"`
-}
-
 type Sequence struct {
 	Name   string `xml:"name,attr"`
 	Number int    `xml:"number,attr"`

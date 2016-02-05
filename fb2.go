@@ -3,11 +3,10 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -15,65 +14,19 @@ import (
 	"github.com/ryanuber/go-glob"
 )
 
-type authorSlice []Person
-
 // Len is part of sort.Interface.
-func (a authorSlice) Len() int {
+func (a acount) Len() int {
 	return len(a)
 }
 
 // Swap is part of sort.Interface.
-func (a authorSlice) Swap(i, j int) {
+func (a acount) Swap(i, j int) {
 	a[i], a[j] = a[j], a[i]
 }
 
 // Less is part of sort.Interface. We use count as the value to sort by
-func (a authorSlice) Less(i, j int) bool {
-	return (len(a[i].Fname) + len(a[i].Mname) + len(a[i].Lname)) < (len(a[j].Fname) + len(a[j].Mname) + len(a[j].Lname))
-}
-
-func (a authorSlice) Exists(Author Person) bool {
-	for _, aut := range a {
-		if aut.Fname == Author.Fname && aut.Lname == Author.Lname {
-			return true
-		}
-	}
-	return false
-}
-
-// var alist = make(map[string]*Author)
-// var a = make(map[Author]struct{})
-
-func NormalizeSpaces(arr string) string {
-	out := []string{}
-	for i := range arr {
-		n := string(arr[i])
-		if strings.TrimSpace(n) != "" {
-			out = append(out, n)
-		}
-	}
-	return strings.Join(out, " ")
-}
-
-func (author Person) Fingerprint() string {
-	// List of unique B-Grams
-	bgram := make(map[string]bool)
-	reg, err := regexp.Compile("[^A-Za-zА-Яа-я]+")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	myStringRunes := []rune(reg.ReplaceAllString(strings.ToLower(author.Lname+author.Fname), ""))
-
-	for i, j := 0, 2; j < len(myStringRunes); i, j = i+1, j+1 {
-		bgram[string(myStringRunes[i:j])] = true
-	}
-	list := []string{}
-	for i, _ := range bgram {
-		list = append(list, string(i))
-	}
-	sort.Strings(list)
-	return strings.Join(list, "")
+func (a acount) Less(i, j int) bool {
+	return (a[i].Counter < a[j].Counter)
 }
 
 func findfiles(searchpath string, out chan string) {
@@ -148,6 +101,30 @@ func repl(b Book) {
 		fmt.Printf("Just got: '%s - %s'\n", b.Title, gen)
 	}
 }
+
+type Key struct {
+	Author  Person
+	Counter int
+}
+
+type acount []Key
+
+func NormalizeText(s string) string {
+	words := strings.Fields(s)
+	smallwords := " a an on the to в на или не х"
+
+	r := strings.NewReplacer("Ё", "Е", ">", "&gt;")
+	fmt.Println(r.Replace("This is <b>HTML</b>!"))
+	// !"'()+,-.:;=[\]{}«»Ёё–—
+	for index, word := range words {
+		if strings.Contains(smallwords, " "+word+" ") {
+			words[index] = word
+		} else {
+			words[index] = strings.Title(word)
+		}
+	}
+	return strings.Join(words, " ")
+}
 func main() {
 	root := flag.String("r", ".", "Path to unsorted books")
 	checkauthors := flag.Bool("A", false, "Scan books for authors and generate lists of corrections")
@@ -168,7 +145,7 @@ func main() {
 	GoodBooks := []*Book{}
 	ErrorBooks := []*Book{}
 	// alist := authorSlice{}
-	AuthorsCounter := map[string][]Person{}
+	AuthorsCounter := make(map[string]acount)
 	seqlist := map[string]int{}
 
 	go func() {
@@ -177,10 +154,30 @@ func main() {
 				ErrorBooks = append(ErrorBooks, b)
 			} else {
 				GoodBooks = append(GoodBooks, b)
+
 				for _, author := range b.Authors {
-					fmt.Println(author.Fname + " " + author.Lname)
-					AuthorsCounter[author.Fingerprint()] = append(AuthorsCounter[author.Fingerprint()], author)
+					countindex := author.Fingerprint()
+					if len(AuthorsCounter[countindex]) > 0 {
+						ok := false
+						for i, k := range AuthorsCounter[countindex] {
+							//if strings.Compare(k.Author.Lname, author.Lname) == 0 &&
+							//	strings.Compare(k.Author.Fname, author.Fname) == 0 {
+							//	k.Author.Mname == author.Mname {
+							if reflect.DeepEqual(k.Author, author) {
+								AuthorsCounter[countindex][i].Counter++
+								ok = true
+								break
+							}
+						}
+						if !ok {
+							AuthorsCounter[countindex] = append(AuthorsCounter[countindex], Key{author, 1})
+						}
+
+					} else {
+						AuthorsCounter[countindex] = append(AuthorsCounter[countindex], Key{author, 1})
+					}
 				}
+
 				for _, s := range b.Sequences {
 					seqlist[s.Name]++
 				}
@@ -199,6 +196,18 @@ func main() {
 	fmt.Printf("Found %d books and %d books with errors\n", len(GoodBooks), len(ErrorBooks))
 
 	if *checkauthors {
+		for _, k := range AuthorsCounter {
+			if len(k) < 2 {
+				continue
+			}
+			sort.Sort(k)
+			for i, _ := range k {
+				if i < len(k)-1 {
+					fmt.Printf("Replace '%q' with '%q'\n", k[i].Author, k[len(k)-1].Author)
+				}
+			}
+		}
+		jsonExport(seqlist, "s.json")
 		jsonExport(AuthorsCounter, "a.json")
 	}
 	// //Initialize scroll bar and scan for files
