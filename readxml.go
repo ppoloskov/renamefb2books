@@ -12,21 +12,6 @@ import (
 	"reflect"
 )
 
-// func TestSave(filename string) {
-// 	doc := New()
-
-// 	if err := doc.LoadFile("test.xml", nil); err != nil {
-// 		t.Errorf("LoadFile(): %s", err)
-// 		return
-// 	}
-
-// 	IndentPrefix = "\t"
-// 	if err := doc.SaveFile("test1.xml"); err != nil {
-// 		t.Errorf("SaveFile(): %s", err)
-// 		return
-// 	}
-// }
-
 func (aut Person) CreateXml(e *etree.Element) *etree.Element {
 	a := e.CreateElement("author")
 	a_ln := a.CreateElement("last-name")

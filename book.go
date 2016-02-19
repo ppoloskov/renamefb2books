@@ -1,14 +1,18 @@
 package main
 
 import (
+	"archive/zip"
 	"encoding/xml"
 	"fmt"
-	"github.com/paulrosania/go-charset/charset"
-	_ "github.com/paulrosania/go-charset/data"
+	"io"
 	"os"
+	"path"
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/paulrosania/go-charset/charset"
+	_ "github.com/paulrosania/go-charset/data"
 )
 
 type Book struct {
@@ -75,22 +79,44 @@ func StringIsUpper(s string) bool {
 	return true
 }
 
-func parsefb2(path string) *Book {
+func parsefb2(filepath string) *Book {
 	b := Book{}
-	b.Error = nil
-	b.Path = path
+	b.Path = filepath
+	var xmlFile io.Reader
 
-	xmlFile, err := os.Open(path)
-	if err != nil {
-		fmt.Println("Error opening file:", err)
-		b.Error = err
-		return &b
+	switch path.Ext(filepath) {
+	case ".zip":
+		var r *zip.ReadCloser
+		r, b.Error = zip.OpenReader(filepath)
+		if b.Error != nil {
+			fmt.Println("b.Erroror opening file:", b.Error)
+			return &b
+		}
+		defer r.Close()
+
+		for _, f := range r.File {
+			if path.Ext(f.Name) == ".fb2" {
+				xmlFile, b.Error = f.Open()
+				if b.Error != nil {
+					fmt.Println("b.Erroror opening file:", b.Error)
+					return &b
+				}
+				break
+			}
+		}
+	case ".fb2":
+		xmlFile, b.Error = os.Open(filepath)
+		if b.Error != nil {
+			fmt.Println("b.Erroror opening file:", b.Error)
+			return &b
+		}
+	default:
+		return nil
 	}
-	defer xmlFile.Close()
 
 	decoder := xml.NewDecoder(xmlFile)
 	decoder.CharsetReader = charset.NewReader
-	err = decoder.Decode(&b)
+	err := decoder.Decode(&b)
 	if err != nil {
 		b.Error = err
 		return &b
@@ -103,12 +129,6 @@ func parsefb2(path string) *Book {
 	if StringIsUpper(b.Title) {
 		b.Error = fmt.Errorf("Title \"%s\" is all in title", b.Title)
 	}
-	// for _, author := range v.Authors {
-	// 	if len(alist[fingerprint(author)]) == 0 {
-	// 		alist[fingerprint(author)] = make(map[Author]struct{})
-	// 	}
-	// 	alist[fingerprint(author)][author] = struct{}{}
-	// }
 
 	return &b
 }

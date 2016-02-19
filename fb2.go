@@ -1,38 +1,24 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"os"
 	"path"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strings"
 	"sync"
+	"text/template"
 
-	"github.com/ryanuber/go-glob"
+	_ "github.com/mattn/go-sqlite3"
 )
-
-// Len is part of sort.Interface.
-func (a acount) Len() int {
-	return len(a)
-}
-
-// Swap is part of sort.Interface.
-func (a acount) Swap(i, j int) {
-	a[i], a[j] = a[j], a[i]
-}
-
-// Less is part of sort.Interface. We use count as the value to sort by
-func (a acount) Less(i, j int) bool {
-	return (a[i].Counter < a[j].Counter)
-}
 
 func findfiles(searchpath string, out chan string) {
 	go func() {
 		filepath.Walk(searchpath, func(path string, f os.FileInfo, _ error) error {
-			if matched, _ := filepath.Match("*.fb2", f.Name()); matched {
+			if strings.HasSuffix(f.Name(), ".fb2") || strings.HasSuffix(f.Name(), ".fb2.zip") {
 				out <- path
 			}
 			return nil
@@ -57,74 +43,6 @@ func worker(ID int, files chan string, out chan *Book, wg *sync.WaitGroup) { //,
 	// wg.Done()
 }
 
-func repl(b Book) {
-
-	var DirectMatch = make(map[string]string)
-	var WildMatch = make(map[string]string)
-
-	for _, p := range Patterns {
-		for _, mt := range p.From {
-			if strings.ContainsAny(mt, "*") {
-				WildMatch[mt] = p.To
-			} else {
-				DirectMatch[mt] = p.To
-			}
-		}
-
-	}
-	gen := ""
-	ok := false
-	if len(b.Genres) > 0 {
-		for _, bookgenre := range b.Genres {
-			if len(bookgenre) == 0 {
-				continue
-			}
-			gen, ok = DirectMatch[bookgenre]
-			if ok {
-				break
-			}
-			for wild := range WildMatch {
-				if glob.Glob(wild, bookgenre) {
-					gen = WildMatch[wild]
-					ok = true
-					break
-				}
-			}
-			if ok {
-				break
-			}
-		}
-	}
-	if gen == "" {
-		fmt.Printf("Just got: '%s - %s'\n", b.Title, b.Genres)
-	} else {
-		fmt.Printf("Just got: '%s - %s'\n", b.Title, gen)
-	}
-}
-
-type Key struct {
-	Author  Person
-	Counter int
-}
-
-type acount []Key
-
-func NormalizeText(s string) string {
-	words := strings.Fields(s)
-	smallwords := " a an on the to в на или не х"
-
-	r := strings.NewReplacer("Ё", "Е", ">", "&gt;")
-	fmt.Println(r.Replace("This is <b>HTML</b>!"))
-	// !"'()+,-.:;=[\]{}«»Ёё–—
-	for index, word := range words {
-		if strings.Contains(smallwords, " "+word+" ") {
-			words[index] = word
-		} else {
-			words[index] = strings.Title(word)
-		}
-	}
-	return strings.Join(words, " ")
-}
 func main() {
 	root := flag.String("r", ".", "Path to unsorted books")
 	checkauthors := flag.Bool("A", false, "Scan books for authors and generate lists of corrections")
@@ -144,9 +62,19 @@ func main() {
 	findfiles(*root, FilesQueue)
 	GoodBooks := []*Book{}
 	ErrorBooks := []*Book{}
-	// alist := authorSlice{}
-	AuthorsCounter := make(map[string]acount)
+
+	AuthorsReplaceList := make(map[Person]Person)
+	a := make(AuthorGroups)
+	ag := &a
 	seqlist := map[string]int{}
+
+	gs := GenreSubstitutions{}
+	gs.Create()
+
+	type pg struct {
+		a Person
+		g string
+	}
 
 	go func() {
 		for b := range BooksQueue {
@@ -154,30 +82,7 @@ func main() {
 				ErrorBooks = append(ErrorBooks, b)
 			} else {
 				GoodBooks = append(GoodBooks, b)
-
-				for _, author := range b.Authors {
-					countindex := author.Fingerprint()
-					if len(AuthorsCounter[countindex]) > 0 {
-						ok := false
-						for i, k := range AuthorsCounter[countindex] {
-							//if strings.Compare(k.Author.Lname, author.Lname) == 0 &&
-							//	strings.Compare(k.Author.Fname, author.Fname) == 0 {
-							//	k.Author.Mname == author.Mname {
-							if reflect.DeepEqual(k.Author, author) {
-								AuthorsCounter[countindex][i].Counter++
-								ok = true
-								break
-							}
-						}
-						if !ok {
-							AuthorsCounter[countindex] = append(AuthorsCounter[countindex], Key{author, 1})
-						}
-
-					} else {
-						AuthorsCounter[countindex] = append(AuthorsCounter[countindex], Key{author, 1})
-					}
-				}
-
+				fmt.Println(b.Title)
 				for _, s := range b.Sequences {
 					seqlist[s.Name]++
 				}
@@ -185,6 +90,7 @@ func main() {
 		}
 	}()
 	wg.Wait()
+
 	for seq, num := range seqlist {
 		if num > 10 {
 			fmt.Println("S: ", seq, num)
@@ -195,20 +101,92 @@ func main() {
 	}
 	fmt.Printf("Found %d books and %d books with errors\n", len(GoodBooks), len(ErrorBooks))
 
+	// Create list of authors substitutions
 	if *checkauthors {
-		for _, k := range AuthorsCounter {
+		for _, b := range GoodBooks {
+			for _, author := range b.Authors {
+				ag.Add(author)
+			}
+		}
+		for _, k := range *ag {
 			if len(k) < 2 {
 				continue
 			}
-			sort.Sort(k)
-			for i, _ := range k {
-				if i < len(k)-1 {
-					fmt.Printf("Replace '%q' with '%q'\n", k[i].Author, k[len(k)-1].Author)
+			sort.Sort(ByLength{k})
+			for i, a := range k {
+				if i > 0 {
+					AuthorsReplaceList[a.Author] = k[0].Author
 				}
 			}
 		}
-		jsonExport(seqlist, "s.json")
-		jsonExport(AuthorsCounter, "a.json")
+		for from, to := range AuthorsReplaceList {
+			fmt.Printf("Replace %v with %v\n", from, to)
+		}
+	}
+
+	authgencounter := make(map[Person]map[string]int)
+
+	for _, b := range GoodBooks {
+		for i, a := range b.Authors {
+			if repl, ok := AuthorsReplaceList[a]; ok {
+				b.Authors[i] = repl
+			}
+		}
+		for _, a := range b.Authors {
+			for _, g := range b.Genres {
+				if _, ok := authgencounter[a]; !ok {
+					authgencounter[a] = make(map[string]int)
+				}
+				authgencounter[a][g]++
+			}
+		}
+	}
+
+	// db, _ := CreateDB("")
+	// for _, b := range GoodBooks {
+	// 	AddBookDB(db, b)
+	// }
+
+	fmt.Println(authgencounter)
+
+	a_g := make(map[Person]string)
+
+	for aut, gen := range authgencounter {
+		bestgen := ""
+		count := 0
+		for g, c := range gen {
+			if c > count {
+				bestgen = g
+				count = c
+			}
+		}
+		a_g[aut] = bestgen
+	}
+
+	fmt.Println(a_g)
+
+	const templ = `
+	{{define "Author"}}
+		{{if .Lname}}{{ .Lname }}{{end}}
+		{{if .Fname}} {{ .Fname }}{{end}}
+		{{if .Mname}} {{ .Mname }}{{end}}
+	{{end}}
+	/{{index .Genres 0}}
+	/{{template "Author" index .Authors 0 }}
+	/{{if .Sequences }}{{index .Sequences 0}}{{end}}
+	/{{.Title}}
+	`
+	t := template.Must(template.New("").Parse(templ))
+
+	for _, b := range GoodBooks {
+		if genrepl, ok := a_g[b.Authors[0]]; ok {
+			b.Genres[0] = genrepl
+		}
+
+		var buf bytes.Buffer
+		t.Execute(&buf, b)
+		r := strings.NewReplacer("\n", "", "\t", "")
+		fmt.Println(strings.TrimSpace(path.Clean(r.Replace(buf.String()))))
 	}
 	// //Initialize scroll bar and scan for files
 	// // for _, boo := range books {
