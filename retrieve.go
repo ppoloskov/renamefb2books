@@ -273,6 +273,7 @@ func (gs *GenreSubstitutions) Create() {
 
 func (gs *GenreSubstitutions) Replace(genre string) string {
 	for _, wild := range *gs {
+		fmt.Printf("%v - %v\n", wild.From, genre)
 		if glob.Glob(wild.From, genre) {
 			return wild.To
 		}

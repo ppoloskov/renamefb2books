@@ -3,6 +3,7 @@ package main
 import (
 	"archive/zip"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -18,6 +19,7 @@ import (
 type Book struct {
 	Error     error
 	Path      string
+	Ext       string
 	XMLName   xml.Name   `xml:"http://www.gribuser.ru/xml/fictionbook/2.0 FictionBook"`
 	Title     string     `xml:"description>title-info>book-title"`
 	Authors   []Person   `xml:"description>title-info>author"`
@@ -82,22 +84,21 @@ func StringIsUpper(s string) bool {
 func parsefb2(filepath string) *Book {
 	b := Book{}
 	b.Path = filepath
+	b.Ext = path.Ext(filepath)
 	var xmlFile io.Reader
 
-	switch path.Ext(filepath) {
+	switch b.Ext {
 	case ".zip":
 		var r *zip.ReadCloser
-		r, b.Error = zip.OpenReader(filepath)
-		if b.Error != nil {
-			fmt.Println("b.Erroror opening file:", b.Error)
+		if r, b.Error = zip.OpenReader(filepath); b.Error != nil {
+			fmt.Println("b.Error opening file:", b.Error)
 			return &b
 		}
 		defer r.Close()
 
 		for _, f := range r.File {
 			if path.Ext(f.Name) == ".fb2" {
-				xmlFile, b.Error = f.Open()
-				if b.Error != nil {
+				if xmlFile, b.Error = f.Open(); b.Error != nil {
 					fmt.Println("b.Erroror opening file:", b.Error)
 					return &b
 				}
@@ -111,23 +112,37 @@ func parsefb2(filepath string) *Book {
 			return &b
 		}
 	default:
-		return nil
+		b.Error = errors.New("Wrong file")
+		return &b
+	}
+
+	if xmlFile == nil {
+		b.Error = errors.New("Wrong file")
+		return &b
 	}
 
 	decoder := xml.NewDecoder(xmlFile)
 	decoder.CharsetReader = charset.NewReader
+	fmt.Println(filepath)
 	err := decoder.Decode(&b)
 	if err != nil {
 		b.Error = err
 		return &b
 	}
-	for _, a := range b.Authors {
+	for i, a := range b.Authors {
+		b.Authors[i].Fname = strings.TrimSpace(b.Authors[i].Fname)
+		b.Authors[i].Lname = strings.TrimSpace(b.Authors[i].Lname)
+		b.Authors[i].Mname = strings.TrimSpace(b.Authors[i].Mname)
 		if StringIsUpper(a.ToString()) {
 			b.Error = fmt.Errorf("Author name %s is all in title", a.ToString())
 		}
 	}
 	if StringIsUpper(b.Title) {
 		b.Error = fmt.Errorf("Title \"%s\" is all in title", b.Title)
+	}
+
+	if len(b.Authors) > *authcompilation {
+		b.Authors = []Person{Person{Lname: "Сборник"}}
 	}
 
 	return &b

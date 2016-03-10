@@ -9,10 +9,25 @@ import (
 	"strings"
 )
 
+// MaxFilenameLen is the maximum length of a file name in bytes
+const MaxFilenameLen = 255
+
 func genName(path string) string {
+	if len(path) >= MaxFilenameLen {
+		ex := len(path) - MaxFilenameLen
+		path = path[0 : len(path)-ex-1]
+	}
+
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return (path)
+	}
 	name := strings.TrimSuffix(path, filepath.Ext(path))
 	for i := 0; ; i++ {
-		s := fmt.Sprint(name + strconv.Itoa(i) + filepath.Ext(path))
+		if i > 10 {
+			panic("Something wrong with new filename")
+		}
+		s := fmt.Sprint(name + "-" + strconv.Itoa(i) + filepath.Ext(path))
+		fmt.Println(s)
 		if _, err := os.Stat(s); os.IsNotExist(err) {
 			fmt.Println(filepath.Abs(s))
 			return (s)

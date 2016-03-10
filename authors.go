@@ -14,9 +14,9 @@ type Person struct {
 	Fname string `xml:"first-name"`
 	Mname string `xml:"middle-name"`
 	Lname string `xml:"last-name"`
-	Nick  string `xml:"nickname"`
-	Email string `xml:"email"`
-	Id    string `xml:"id"`
+	// Nick  string `xml:"nickname"`
+	// Email string `xml:"email"`
+	// Id    string `xml:"id"`
 }
 
 func NormalizeSpaces(arr string) string {
@@ -51,6 +51,9 @@ func (author Person) Fingerprint() string {
 	return strings.Join(list, "")
 }
 
+func (author Person) String() string {
+	return fmt.Sprintf("L:\"%s\", F:\"%s\", M:\"%s\"", author.Lname, author.Fname, author.Mname)
+}
 func (author Person) LongAuthorString() string {
 	cleanString := func(r rune) rune {
 		if unicode.IsLetter(r) {
