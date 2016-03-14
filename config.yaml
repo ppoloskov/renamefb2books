@@ -1,0 +1,27 @@
+GenreRenameRules:
+- T: business
+  Fr: accounting, banking, economics, global_economy, industries, job_hunting, management,
+    marketing, org_behavior, paper_work, personal_finance, popular_business, real_estate,
+    sci_business, small_business, stock, trade
+- T: classic
+  Fr: '*_classic, antique*, folk*, prose_classic'
+- T: fiction
+  Fr: adv*, aphorisms, *_contemporary, comedy, det*, dissident, drama,epic, epic_poetry,
+    epistolary_fiction, essay, experimental_poetry, extravaganza, fable, fanfiction,gothic_novel,
+    great_story, in_verse, limerick, love*, lyrics, mystery, palindromes, prose*,
+    roman, sagas,scenarios, screenplays, short_story, song_poetry, story, thriller,
+    tragedy, vaudeville, vers_libre, ya
+- T: fs&f
+  Fr: child*, fairy_fantasy, historical_fantasy, nsf, popadanec, sf*, humor*
+- T: nonfiction
+  Fr: comp*, home*, military*, music, nonf_criticism, nonf_military, nonf_publicism,
+    nonfiction, psy*, religion*, sci*
+- T: Nonfiction/Biography
+  Fr: nonf_biography
+- T: Nonfiction/History
+  Fr: sci_history
+- T: other
+  Fr: astrology, auto_regulations, other, ref*
+
+AC: 12
+
