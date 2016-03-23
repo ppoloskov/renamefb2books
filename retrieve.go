@@ -249,20 +249,20 @@ type Match struct {
 	To   string
 }
 
-type GenreSubstitutions []*Match
+type GenreSubstitutions []Match
 
-func (gs *GenreSubstitutions) Create() {
+func (gs *GenreSubstitutions) Create(conf *Config) {
 
-	DirectMatch := []*Match{}
-	WildMatch := []*Match{}
+	DirectMatch := []Match{}
+	WildMatch := []Match{}
 
-	for _, p := range Patterns {
-		for _, f := range p.From {
-			from := string(f)
+	for _, p := range conf.RenameRules {
+		for _, f := range strings.Split(p.From, ",") {
+			from := strings.TrimSpace(f)
 			if strings.ContainsAny(from, "*") {
-				WildMatch = append(WildMatch, &Match{from, p.To})
+				WildMatch = append(WildMatch, Match{from, p.To})
 			} else {
-				DirectMatch = append(DirectMatch, &Match{from, p.To})
+				DirectMatch = append(DirectMatch, Match{from, p.To})
 			}
 		}
 	}
@@ -273,7 +273,6 @@ func (gs *GenreSubstitutions) Create() {
 
 func (gs *GenreSubstitutions) Replace(genre string) string {
 	for _, wild := range *gs {
-		fmt.Printf("%v - %v\n", wild.From, genre)
 		if glob.Glob(wild.From, genre) {
 			return wild.To
 		}

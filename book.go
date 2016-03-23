@@ -99,7 +99,7 @@ func parsefb2(filepath string) *Book {
 		for _, f := range r.File {
 			if path.Ext(f.Name) == ".fb2" {
 				if xmlFile, b.Error = f.Open(); b.Error != nil {
-					fmt.Println("b.Erroror opening file:", b.Error)
+					fmt.Println("b.Error opening file:", b.Error)
 					return &b
 				}
 				break
@@ -108,7 +108,7 @@ func parsefb2(filepath string) *Book {
 	case ".fb2":
 		xmlFile, b.Error = os.Open(filepath)
 		if b.Error != nil {
-			fmt.Println("b.Erroror opening file:", b.Error)
+			fmt.Println("b.Error opening file:", b.Error)
 			return &b
 		}
 	default:
@@ -123,7 +123,6 @@ func parsefb2(filepath string) *Book {
 
 	decoder := xml.NewDecoder(xmlFile)
 	decoder.CharsetReader = charset.NewReader
-	fmt.Println(filepath)
 	err := decoder.Decode(&b)
 	if err != nil {
 		b.Error = err
@@ -135,6 +134,18 @@ func parsefb2(filepath string) *Book {
 		b.Authors[i].Mname = strings.TrimSpace(b.Authors[i].Mname)
 		if StringIsUpper(a.ToString()) {
 			b.Error = fmt.Errorf("Author name %s is all in title", a.ToString())
+		}
+	}
+
+	for i := len(b.Sequences) - 1; i >= 0; i-- {
+		s := b.Sequences[i]
+		if s.Name == "" {
+			s.Number = 0
+		}
+		s.Name = strings.TrimSpace(s.Name)
+		// Condition to decide if current element has to be deleted:
+		if s.Name == "" {
+			b.Sequences = append(b.Sequences[:i], b.Sequences[i+1:]...)
 		}
 	}
 	if StringIsUpper(b.Title) {

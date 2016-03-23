@@ -71,9 +71,8 @@ type Counter struct {
 	Count  int
 }
 
-type Counters []*Counter
-
-type AuthorGroups map[string]Counters
+type Counters []Counter
+type AuthorsCounter map[Person]int
 
 // Len is part of sort.Interface.
 func (a Counters) Len() int      { return len(a) }
@@ -81,11 +80,6 @@ func (a Counters) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 
 type ByNumber struct{ Counters }
 type ByLength struct{ Counters }
-
-// func ByNumeber(items []Item) byWeight {
-// append creates a copy of items, they are appended to the empty slice byWeight{}
-// 	return append(byWeight{}, items...)
-// }
 
 // Decresing sort > is reversed
 func (a ByNumber) Less(i, j int) bool {
@@ -135,21 +129,42 @@ func NormalizeText(s string) string {
 
 }
 
-func (ag *AuthorGroups) Add(author Person) {
-	ind := author.Fingerprint()
+func GenerateAuthorReplace(authorscounter AuthorsCounter) map[Person]Person {
+	ag := make(map[string]Counters)
+	AuthorsReplaceList := make(map[Person]Person)
 
-	// if group exists we look it throw to check if author is in it. If so - increment counter and return
-	if len((*ag)[ind]) > 0 {
-		for _, k := range (*ag)[ind] {
-			//if strings.Compare(k.Author.Lname, author.Lname) == 0 &&
-			//	strings.Compare(k.Author.Fname, author.Fname) == 0 {
-			//	k.Author.Mname == author.Mname {
+	for author, count := range authorscounter {
+		ind := author.Fingerprint()
+		// if group exists we look it throw to check if author is in it. If so - increment counter and return
+		// In other cases we add author to group
+		if len(ag[ind]) == 0 {
+			ag[ind] = append(ag[ind], Counter{Author: author, Count: count})
+			continue
+		}
+
+		for _, k := range ag[ind] {
 			if reflect.DeepEqual(k.Author, author) {
-				k.Count++
-				return
+				k.Count += count
+				continue
+			}
+		}
+		ag[ind] = append(ag[ind], Counter{Author: author, Count: count})
+	}
+	for _, k := range ag {
+		if len(k) == 1 {
+			continue
+		}
+		sort.Sort(ByLength{k})
+		fmt.Println(k)
+		for i, a := range k {
+			if i > 0 && a.Author.String() != k[0].Author.String() {
+				AuthorsReplaceList[a.Author] = k[0].Author
 			}
 		}
 	}
-	// In other cases we add author to group
-	(*ag)[ind] = append((*ag)[ind], &Counter{Author: author, Count: 1})
+	fmt.Println("Author correntions:")
+	for from, to := range AuthorsReplaceList {
+		fmt.Printf("Replace %v with %v\n", from, to)
+	}
+	return AuthorsReplaceList
 }
