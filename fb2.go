@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
+	"runtime/pprof"
 	"strings"
 	"sync"
 	"text/template"
@@ -15,12 +17,15 @@ import (
 	// "github.com/metakeule/places"
 )
 
+// TODO: Add output path, sort authors in books, cleanup series, create series folders
+
 var (
-	root            = flag.String("r", "", "Path to unsorted books")
-	checkauthors    = flag.Bool("A", false, "Scan books for authors and generate lists of corrections")
+	indir           = flag.String("in", "", "Path to unsorted books")
+	outdir          = flag.String("out", "./out", "Where to renamed books")
 	authcompilation = flag.Int("comp", 2, "Number of authors is book file to set author to compilaton")
-	rename          = flag.Bool("R", false, "Rename founded files")
+	rename          = flag.Bool("R", false, "Rename files")
 	configfile      = flag.String("c", "config.yaml", "Path to config file")
+	cpuprofile      = flag.String("cpuprofile", "", "write cpu profile to file")
 )
 
 func findfiles(searchpath string) chan string {
@@ -60,7 +65,19 @@ func worker(ID int, files chan string, out chan *Book, wg *sync.WaitGroup) { //,
 func main() {
 
 	flag.Parse()
-
+	// Profiler support
+	if *indir == "" {
+		fmt.Println("You must specify path to books")
+		os.Exit(-1)
+	}
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
 	conf, err := readConfig(*configfile)
 	if err != nil {
 		panic(err)
@@ -69,8 +86,8 @@ func main() {
 	gs.Create(conf)
 	fmt.Println(gs)
 
-	fmt.Println("Looking for files in ", *root)
-	FilesQueue := findfiles(*root)
+	fmt.Println("Looking for files in ", *indir)
+	FilesQueue := findfiles(*indir)
 
 	wg := &sync.WaitGroup{}
 	BooksQueue := make(chan *Book)
@@ -80,17 +97,9 @@ func main() {
 	}
 	GoodBooks := []*Book{}
 	ErrorBooks := []*Book{}
-
-	type pg struct {
-		a Person
-		g string
-	}
-
-	SequenceCounter := map[string]int{}
-	AuthorsBookCounter := make(map[string]int)
-	authgencounter := make(map[Person]map[string]int)
 	authorscounter := make(AuthorsCounter)
 
+	// Read all book files, sort correct and incorrect and accumulate authors info for list of corrections
 	go func() {
 		for b := range BooksQueue {
 			if b.Error != nil {
@@ -99,40 +108,67 @@ func main() {
 			}
 
 			GoodBooks = append(GoodBooks, b)
-			for _, s := range b.Sequences {
-				SequenceCounter[s.Name]++
-			}
 			for _, a := range b.Authors {
-				AuthorsBookCounter[a.Fingerprint()]++
 				authorscounter[a]++
-
-				for _, g := range b.Genres {
-					if g == "" {
-						continue
-					}
-					if _, ok := authgencounter[a]; !ok {
-						authgencounter[a] = make(map[string]int)
-					}
-					authgencounter[a][g]++
-				}
 			}
 		}
 	}()
-	fmt.Println("Wait")
 	wg.Wait()
+
+	// Create list of authors substitutions
+	AuthorsReplaceList := GenerateAuthorReplace(authorscounter)
+
+	type pg struct {
+		a Person
+		g string
+	}
+	AuthorsBookCounter := make(map[Person]int)
+	SequenceCounter := map[string]int{}
+	authgencounter := make(map[Person]map[string]int)
+	AuthorOrigin := make(map[Person]map[string]int)
+	AuthorSequence := make(map[Person]map[string]int)
+
+	for _, b := range GoodBooks {
+		for i, a := range b.Authors {
+			if repl, ok := AuthorsReplaceList[a]; ok {
+				b.Authors[i] = repl
+			}
+			AuthorsBookCounter[b.Authors[i]]++
+			for _, g := range b.Genres {
+				if g == "" {
+					continue
+				}
+				if _, ok := authgencounter[b.Authors[i]]; !ok {
+					authgencounter[b.Authors[i]] = make(map[string]int)
+				}
+				authgencounter[b.Authors[i]][g]++
+			}
+
+			if _, ok := AuthorOrigin[b.Authors[i]]; !ok {
+				AuthorOrigin[b.Authors[i]] = make(map[string]int)
+			}
+			AuthorOrigin[b.Authors[i]][b.Translated()]++
+
+			for _, s := range b.Sequences {
+				if _, ok := AuthorSequence[b.Authors[i]]; !ok {
+					AuthorSequence[b.Authors[i]] = make(map[string]int)
+				}
+				AuthorSequence[b.Authors[i]][s.Name]++
+			}
+		}
+
+		for _, s := range b.Sequences {
+			SequenceCounter[s.Name]++
+		}
+
+	}
 
 	for seq, num := range SequenceCounter {
 		if num > 10 {
 			fmt.Println("S: ", seq, num)
 		}
 	}
-	// for _, book := range ErrorBooks {
-	// 	fmt.Printf("Error in book: %s - %s\n", path.Base(book.Path), book.Error)
-	// }
 	fmt.Printf("Found %d books and %d books with errors\n", len(GoodBooks), len(ErrorBooks))
-
-	// Create list of authors substitutions
-	AuthorsReplaceList := GenerateAuthorReplace(authorscounter)
 
 	// jsonExport(AuthorsReplaceList, "a.json")
 
@@ -160,17 +196,14 @@ func main() {
 	}
 	fmt.Printf("Authors-genres contents: %v\n\n", AuthorGenre)
 
-	const AuthorTempl = `{{define "A"}}{{.Lname}}{{if .Fname}} {{.Fname}}{{end}}{{if .Mname}} {{.Mname}}{{end}}{{end}}`
-	const AuthorFolder = `{{.Genre}}/{{template "A" .}}/{{if .Sequence}}{{.Sequence}} - {{end}}{{if .SeqNo}}#{{.SeqNo}} - {{end}}{{.Title}}{{.Ext}}`
-	const AuthorFlat = `{{.Genre}}/{{template "A" .}} - {{if .Sequence}}{{.Sequence}} - {{end}}{{if .SeqNo}}#{{.SeqNo}} - {{end}}{{.Title}}{{.Ext}}`
+	const AuthorTempl = `{{define "Auth"}}{{range .Authors}}, {{.Lname}}{{if .Fname}} {{.Fname}}{{end}}{{if .Mname}} {{.Mname}}{{end}}{{end}}{{end}}`
+	const SeriesTempl = `{{define "Ser"}}{{if .Sequence}}{{.Sequence}}{{.SerSep}}{{if ge .SeqNo 1}}#{{.SeqNo}} - {{end}}{{end}}{{end}}`
+	const AuthorFolder = `{{.Origin}}_{{.Genre}}/{{template "Auth" .}}{{.AuthorSep}}{{template "Ser" .}}{{.Title}}{{.Ext}}`
 
 	t := template.New("Filename - author is folder")
-	t, err = t.Parse(AuthorTempl)
 	t, err = t.Parse(AuthorFolder)
-
-	// f := template.New("Filename - author is part of filename")
-	// f, err = f.Parse(AuthorFlat)
-	// f, err = f.Parse(AuthorTempl)
+	t, err = t.Parse(AuthorTempl)
+	t, err = t.Parse(SeriesTempl)
 
 	if err != nil {
 		fmt.Println("Fatal error ", err.Error())
@@ -178,65 +211,71 @@ func main() {
 	}
 
 	for _, b := range GoodBooks {
-		for i, a := range b.Authors {
-			if repl, ok := AuthorsReplaceList[a]; ok {
-				b.Authors[i] = repl
-			}
-		}
 		if genrepl, ok := AuthorGenre[b.Authors[0]]; ok {
 			b.Genres[0] = genrepl
 		}
-		// r := strings.NewReplacer(" /", "/", "/ -", "/", " # -", "", "\n", "", "\t", "", "  ", " ")
-		//r := strings.NewReplacer("/ -", "/", "# -", "")
+		r := strings.NewReplacer(
+			"/, ", "/",
+			"  ", " ")
+
 		type tempb struct {
-			Genre, Lname, Fname, Mname, Title, Ext, Sequence, SeqNo string
+			AuthorSep, SerSep, Genre, Lname, Fname, Mname, Title, Ext, Origin, Sequence string
+			SeqNo                                                                       int
+			Authors                                                                     []Person
 		}
 
 		var NewFileName bytes.Buffer
 		BookMap := &tempb{}
 		BookMap.Genre = b.Genres[0]
-		BookMap.Lname = b.Authors[0].Lname
-		BookMap.Fname = b.Authors[0].Fname
-		BookMap.Mname = b.Authors[0].Mname
+		BookMap.Authors = b.Authors
 		BookMap.Title = b.Title
 		BookMap.Ext = b.Ext
-
-		if len(b.Sequences) >= 1 {
+		// Check is book belongs to any series
+		if len(b.Sequences) > 0 {
 			BookMap.Sequence = b.Sequences[0].Name
-			BookMap.SeqNo = fmt.Sprintf("%d", b.Sequences[0].Number)
+			BookMap.SeqNo = b.Sequences[0].Number
 		} else {
 			BookMap.Sequence = ""
-			BookMap.SeqNo = ""
+			BookMap.SeqNo = 0
+		}
+		if AuthorsBookCounter[b.Authors[0]] >= 3 {
+			BookMap.AuthorSep = "/"
+		} else {
+			BookMap.AuthorSep = " - "
+		}
+		if SequenceCounter[BookMap.Sequence] >= 3 || AuthorSequence[b.Authors[0]][BookMap.Sequence] > 1 {
+			BookMap.SerSep = "/"
+		} else {
+			BookMap.SerSep = " - "
+		}
+		n := 0
+
+		for lang, num := range AuthorOrigin[b.Authors[0]] {
+			if BookMap.Origin == "" || num > n {
+				BookMap.Origin = lang
+				n = num
+			}
 		}
 
-		// if authorscounter[b.Authors[0].String()] >= 3 {
+		fmt.Println(BookMap)
 		err = t.Execute(&NewFileName, BookMap)
-		// } else {
-		// 	err = f.Execute(&NewFileName, BookMap)
-		// }
-
 		if err != nil {
 			fmt.Println("Fatal error ", err.Error())
 			os.Exit(1)
 		}
-		fmt.Println("- New file name: ", path.Clean(NewFileName.String()))
+		nm := r.Replace(path.Clean(strings.Join([]string{*outdir, NewFileName.String()}, "/")))
+		fmt.Println("- New file name: ", nm)
 
-		// if *rename {
-		// 	fmt.Println("Renaming", b.Path, "to", nm)
-		// 	fmt.Println("5")
-		// 	os.MkdirAll(path.Dir(nm), 0777)
-		// 	fmt.Println("6")
-		// 	if err := os.Rename(b.Path, nm); err != nil {
-		// 		fmt.Println("7")
-		// 		fmt.Println("Rename error!", err)
-		// 	}
-		// 	fmt.Println("8")
-		// }
+		if *rename {
+			fmt.Println("Renaming", b.Path, "to", nm)
+			os.MkdirAll(path.Dir(nm), 0777)
+			if err := os.Rename(b.Path, nm); err != nil {
+				fmt.Println("Rename error!", err)
+			}
+		}
 	}
 	// //Initialize scroll bar and scan for files
 	// // for _, boo := range books {
 	// 	output, _ := xml.MarshalIndent(boo, "  ", "    ")
 	// 	fmt.Printf("!-%s-\n", output)
-	// }
-	// fmt.Printf("Files %d/%d processed, %d errors\n", len(filesToProcess), len(books), processErrors)
 }

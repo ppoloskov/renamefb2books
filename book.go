@@ -51,11 +51,11 @@ type Book struct {
 // <publish-info> - сведения об издании книги, которая была использована как источник при подготовке документа. От нуля до одного вхождений.
 // <custom-info>
 
-var Translated = func(b Book) bool {
+func (b *Book) Translated() string {
 	if strings.ToLower(b.SrcLang) == "ru" || b.SrcLang == "" {
-		return false
+		return "rus"
 	} else {
-		return true
+		return "for"
 	}
 }
 
@@ -137,6 +137,9 @@ func parsefb2(filepath string) *Book {
 		}
 	}
 
+	if len(b.Genres) == 0 {
+		b.Genres = append(b.Genres, "Unknown")
+	}
 	for i := len(b.Sequences) - 1; i >= 0; i-- {
 		s := b.Sequences[i]
 		if s.Name == "" {

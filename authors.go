@@ -33,7 +33,7 @@ func NormalizeSpaces(arr string) string {
 func (author Person) Fingerprint() string {
 	// List of unique B-Grams
 	bgram := make(map[string]bool)
-	reg, err := regexp.Compile("[^A-Za-zА-Яа-я]+")
+	reg, err := regexp.Compile("[^a-zа-я]+")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -156,9 +156,9 @@ func GenerateAuthorReplace(authorscounter AuthorsCounter) map[Person]Person {
 		}
 		sort.Sort(ByLength{k})
 		fmt.Println(k)
-		for i, a := range k {
-			if i > 0 && a.Author.String() != k[0].Author.String() {
-				AuthorsReplaceList[a.Author] = k[0].Author
+		for i := 1; i < len(k); i++ {
+			if k[i].Author.String() != k[0].Author.String() {
+				AuthorsReplaceList[k[i].Author] = k[0].Author
 			}
 		}
 	}
