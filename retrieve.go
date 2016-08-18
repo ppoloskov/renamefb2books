@@ -306,7 +306,7 @@ func (book *Book) SearchLitMir(url string) {
 	if i := series.Iter(root); i != nil {
 		for i.Next() {
 			n := i.Node()
-			book.Sequences = append(book.Sequences, Sequence{fmt.Sprintf("%s", n), 0})
+			book.AuthorSequences = append(book.AuthorSequences, Sequence{fmt.Sprintf("%s", n), 0})
 		}
 	}
 	if i := genre.Iter(root); i != nil {
@@ -327,7 +327,7 @@ func (book *Book) SearchLitMir(url string) {
 //
 // 	fmt.Printf("Authors: '%v'\n", b.Authors)
 // 	fmt.Printf("Title: '%s'\n", b.Title)
-// 	fmt.Printf("Series: '%s'\n", b.Sequences)
+// 	fmt.Printf("Series: '%s'\n", b.AuthorSequences)
 // 	fmt.Printf("Genres: '%s'\n", b.Genres)
 //
 func SearchLibRusEc(book *Book) {

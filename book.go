@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/zip"
+	"crypto/md5"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -17,20 +18,27 @@ import (
 )
 
 type Book struct {
-	Error     error
-	Path      string
-	Ext       string
-	XMLName   xml.Name   `xml:"http://www.gribuser.ru/xml/fictionbook/2.0 FictionBook"`
-	Title     string     `xml:"description>title-info>book-title"`
-	Authors   []Person   `xml:"description>title-info>author"`
-	Genres    []string   `xml:"description>title-info>genre"`
-	Sequences []Sequence `xml:"description>title-info>sequence"`
-	SrcLang   string     `xml:"description>title-info>src-lang"`
-	Keywords  []string   `xml:"description>title-info>keywords"`
-	Date      string     `xml:"description>title-info>date"`
-	Coverpage string     `xml:"description>title-info>coverpage"`
+	Error              error
+	Path               string
+	MD5                string
+	Ext                string
+	XMLName            xml.Name   `xml:"http://www.gribuser.ru/xml/fictionbook/2.0 FictionBook"`
+	ID                 string     `xml:"description>document-info>id"`
+	Title              string     `xml:"description>title-info>book-title"`
+	Authors            []Person   `xml:"description>title-info>author"`
+	Genres             []string   `xml:"description>title-info>genre"`
+	AuthorSequences    []Sequence `xml:"description>title-info>sequence"`
+	PublisherSequences []Sequence `xml:"description>publish-info>sequence"`
+	SrcLang            string     `xml:"description>title-info>src-lang"`
+	Keywords           []string   `xml:"description>title-info>keywords"`
+	Date               string     `xml:"description>title-info>date"`
+	Coverpage          string     `xml:"description>title-info>coverpage"`
 	//	 Annotation  string     `xml:"description>title-info>annotation"`
-	Annotation struct {
+	CorrectAuthors         []Person
+	CorrectGenres          []string
+	CorrectTitle           string
+	CorrectAuthorSequences []Sequence
+	Annotation             struct {
 		Items []struct {
 			XMLName xml.Name
 			Content string `xml:",innerxml"`
@@ -66,6 +74,36 @@ type Sequence struct {
 
 func (p *Person) ToString() string {
 	return p.Lname + p.Fname
+}
+
+func cleanup(s string, title string) string {
+	// Remove leading and trailing spaces
+	s = strings.TrimSpace(s)
+	// Replace unwanted symbols with corret ones
+	r := strings.NewReplacer(
+		"  ", " ",
+		"ё", "е",
+		"Ё", "Е",
+		"»", "\"",
+		"«", "\"")
+	s = r.Replace(s)
+	if title == "title" {
+		s = strings.Title(s)
+	}
+	return s
+	// !"'()+,-.:;=[\]{}Ёё–—
+	// words := strings.Fields(s)
+	// smallwords := "в на или не х"
+
+	// for index, word := range words {
+	// 	if strings.Contains(smallwords, " "+word+" ") {
+	// 		words[index] = word
+	// } else {
+	// 		words[index] = strings.Title(word)
+	// 	}
+	// }
+	// return strings.Join(words, " ")
+
 }
 
 func StringIsUpper(s string) bool {
@@ -120,44 +158,60 @@ func parsefb2(filepath string) *Book {
 		b.Error = errors.New("Wrong file")
 		return &b
 	}
-
+	// Add defer to correctly close opened files
 	decoder := xml.NewDecoder(xmlFile)
 	decoder.CharsetReader = charset.NewReader
 	err := decoder.Decode(&b)
+	// defer file.Close()
+
+	// result := []byte{}
+
+	hash := md5.New()
+
+	// //Copy the file in the hash interface and check for any error
+	_, err = io.Copy(hash, xmlFile)
+
 	if err != nil {
-		b.Error = err
+		b.Error = errors.New("Cant read file")
 		return &b
 	}
-	for i, a := range b.Authors {
-		b.Authors[i].Fname = strings.TrimSpace(b.Authors[i].Fname)
-		b.Authors[i].Lname = strings.TrimSpace(b.Authors[i].Lname)
-		b.Authors[i].Mname = strings.TrimSpace(b.Authors[i].Mname)
-		if StringIsUpper(a.ToString()) {
-			b.Error = fmt.Errorf("Author name %s is all in title", a.ToString())
-		}
+
+	// buf, _ := ioutil.ReadAll(xmlFile)
+	// hash.Write(xmlFile)
+	fmt.Printf("\n!!! %x, %v !!!\n", hash.Sum(nil))
+
+	// b.MD5 = fmt.Sprintf("%x", hash.Sum(result))
+
+	return cleanUpBook(&b)
+}
+
+func cleanUpBook(b *Book) *Book {
+	for _, a := range b.Authors {
+		newAuthor := Person{}
+		newAuthor.Fname = cleanup(a.Fname, "title")
+		newAuthor.Lname = cleanup(a.Lname, "title")
+		newAuthor.Mname = cleanup(a.Mname, "title")
+		b.CorrectAuthors = append(b.CorrectAuthors, newAuthor)
 	}
 
 	if len(b.Genres) == 0 {
 		b.Genres = append(b.Genres, "Unknown")
 	}
-	for i := len(b.Sequences) - 1; i >= 0; i-- {
-		s := b.Sequences[i]
+	for i := len(b.AuthorSequences) - 1; i >= 0; i-- {
+		s := b.AuthorSequences[i]
+		// Remove empty.AuthorSequences
 		if s.Name == "" {
-			s.Number = 0
+			b.AuthorSequences = append(b.AuthorSequences[:i], b.AuthorSequences[i+1:]...)
 		}
-		s.Name = strings.TrimSpace(s.Name)
-		// Condition to decide if current element has to be deleted:
-		if s.Name == "" {
-			b.Sequences = append(b.Sequences[:i], b.Sequences[i+1:]...)
-		}
+		s.Name = cleanup(s.Name, "")
 	}
 	if StringIsUpper(b.Title) {
 		b.Error = fmt.Errorf("Title \"%s\" is all in title", b.Title)
 	}
 
 	if len(b.Authors) > *authcompilation {
-		b.Authors = []Person{Person{Lname: "Сборник"}}
+		b.CorrectAuthors = []Person{Person{Lname: "Сборник"}}
 	}
 
-	return &b
+	return b
 }

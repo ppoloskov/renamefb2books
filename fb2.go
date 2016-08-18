@@ -128,6 +128,24 @@ func main() {
 	AuthorOrigin := make(map[Person]map[string]int)
 	AuthorSequence := make(map[Person]map[string]int)
 
+	db, _ := OpenDB("")
+	IDCount := 0
+	NoIDConut := 0
+	for _, b := range GoodBooks {
+		if id := GetBookID(db, b); id > 0 {
+			IDCount++
+			fmt.Printf("Book title: %s, ID: %d, MD5: %s\n", b.Title, id, b.MD5)
+			fmt.Println(GetAuthors(db, id))
+		} else {
+			fmt.Printf("No ID found for: %s\n", b.Path)
+			fmt.Printf("%s: %s\n", b.Authors[0].Lname, b.Title)
+			fmt.Println("-----------------------------")
+			NoIDConut++
+		}
+	}
+	fmt.Printf("Good books: %d, books with ISs: %d, noISs: %d", len(GoodBooks), IDCount, NoIDConut)
+	return
+	// !!!
 	for _, b := range GoodBooks {
 		for i, a := range b.Authors {
 			if repl, ok := AuthorsReplaceList[a]; ok {
@@ -149,7 +167,7 @@ func main() {
 			}
 			AuthorOrigin[b.Authors[i]][b.Translated()]++
 
-			for _, s := range b.Sequences {
+			for _, s := range b.AuthorSequences {
 				if _, ok := AuthorSequence[b.Authors[i]]; !ok {
 					AuthorSequence[b.Authors[i]] = make(map[string]int)
 				}
@@ -157,7 +175,7 @@ func main() {
 			}
 		}
 
-		for _, s := range b.Sequences {
+		for _, s := range b.AuthorSequences {
 			SequenceCounter[s.Name]++
 		}
 
@@ -231,9 +249,9 @@ func main() {
 		BookMap.Title = b.Title
 		BookMap.Ext = b.Ext
 		// Check is book belongs to any series
-		if len(b.Sequences) > 0 {
-			BookMap.Sequence = b.Sequences[0].Name
-			BookMap.SeqNo = b.Sequences[0].Number
+		if len(b.AuthorSequences) > 0 {
+			BookMap.Sequence = b.AuthorSequences[0].Name
+			BookMap.SeqNo = b.AuthorSequences[0].Number
 		} else {
 			BookMap.Sequence = ""
 			BookMap.SeqNo = 0

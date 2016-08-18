@@ -11,12 +11,13 @@ import (
 )
 
 type Person struct {
+	LRSId int
 	Fname string `xml:"first-name"`
 	Mname string `xml:"middle-name"`
 	Lname string `xml:"last-name"`
-	// Nick  string `xml:"nickname"`
-	// Email string `xml:"email"`
-	// Id    string `xml:"id"`
+	Nick  string `xml:"nickname"`
+	Email string `xml:"email"`
+	Id    string `xml:"id"`
 }
 
 func NormalizeSpaces(arr string) string {
@@ -95,7 +96,7 @@ func BegEndSpace(s string) bool {
 }
 
 func (a ByLength) Less(i, j int) bool {
-	// Prefer authors with middlenames. Drop i if no middle name
+	// Prefer authors with middlenames. Drop if no middle name
 	if len(a.Counters[i].Author.Mname) < len(a.Counters[j].Author.Mname) {
 		return false
 	}
@@ -109,24 +110,6 @@ func (a ByLength) Less(i, j int) bool {
 	}
 	// author i is better
 	return (len(a.Counters[i].Author.LongAuthorString()) > len(a.Counters[j].Author.LongAuthorString()))
-}
-
-func NormalizeText(s string) string {
-	words := strings.Fields(s)
-	smallwords := " a an on the to в на или не х"
-
-	r := strings.NewReplacer("Ё", "Е", ">", "&gt;")
-	fmt.Println(r.Replace("This is <b>HTML</b>!"))
-	// !"'()+,-.:;=[\]{}«»Ёё–—
-	for index, word := range words {
-		if strings.Contains(smallwords, " "+word+" ") {
-			words[index] = word
-		} else {
-			words[index] = strings.Title(word)
-		}
-	}
-	return strings.Join(words, " ")
-
 }
 
 func GenerateAuthorReplace(authorscounter AuthorsCounter) map[Person]Person {

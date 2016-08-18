@@ -2,8 +2,10 @@ package main
 
 import (
 	"database/sql"
+	sqlite "github.com/mattn/go-sqlite3"
 	"log"
-	"os"
+	"strconv"
+	"strings"
 )
 
 const (
@@ -36,89 +38,88 @@ const (
 	dbtype = "sqlite3"
 )
 
-func CreateDB(dbpath string) (db *sql.DB, err error) {
+func upper(s string) string {
+	return strings.ToUpper(s)
+}
 
+func OpenDB(dbpath string) (db *sql.DB, err error) {
 	if dbpath == "" {
-		dbpath = "./foo.db"
+		dbpath = "/Users/p.poloskov/boo.db"
 	}
 
-	os.Remove(dbpath)
+	sql.Register("sqlite3_custom", &sqlite.SQLiteDriver{
+		ConnectHook: func(conn *sqlite.SQLiteConn) error {
+			if err := conn.RegisterFunc("upp", upper, true); err != nil {
+				return err
+			}
+			return nil
+		},
+	})
 
-	db, err = sql.Open(dbtype, dbpath)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
+	db, err = sql.Open("sqlite3_custom", dbpath)
+	// defer db.Close()
 
-	_, err = db.Exec(CreateBase)
 	if err != nil {
-		log.Printf("%q: %s\n", err, CreateBase)
+		log.Fatal("Failed to create the handle", err)
 		return nil, err
 	} else {
-		return db, nil
+		return db, err
 	}
 }
 
-func AddBookDB(db *sql.DB, b *Book) {
-	tx, err := db.Begin()
+func GetBookID(db *sql.DB, b *Book) (id int) {
+	const q = `SELECT MAX(b.bid) FROM libbook b 
+		LEFT JOIN libavtor ON libavtor.bid = b.bid 
+		LEFT JOIN libavtors a ON libavtor.aid = a.aid 
+		WHERE upp(b.title) = upp(?) 
+		AND a.LastName = ? 
+		AND b.Deleted != '1' 
+		AND b.FileType = 'fb2'`
+
+	var LREId string
+	err := db.QueryRow(q, b.Title, b.Authors[0].Lname).Scan(&LREId)
+	if err != nil {
+		log.Println(err)
+		// log.Fatal(err)
+		return (0)
+	}
+
+	id, err = strconv.Atoi(LREId)
+	if err != nil {
+		return (0)
+	}
+
+	return (id)
+}
+
+func GetAuthors(db *sql.DB, id int) (Authors []Person) {
+	const GetAuthors = `SELECT a.aid, a.FirstName, a.MiddleName, a.LastName FROM libbook 
+			LEFT JOIN libavtor ON libavtor.bid = libbook.bid
+			LEFT JOIN libavtors a ON a.aid = libavtor.aid
+			WHERE libbook.bid = ? 
+			AND libbook.Deleted != '1' 
+			AND libbook.FileType = 'fb2'
+			AND libavtor.role = 'a'
+			ORDER BY title DESC`
+
+	rows, err := db.Query(GetAuthors, id)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		p := &Person{}
+		err := rows.Scan(&p.LRSId, &p.Fname, &p.Mname, &p.Lname)
+		if err != nil {
+			log.Fatal(err)
+		}
+		Authors = append(Authors, *p)
+	}
+	err = rows.Err()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	res, err := db.Exec("Insert into books(title, filepath) values(?, ?)", b.Title, b.Path)
-	if err != nil {
-		log.Fatal(err)
-	}
-	b_id, _ := res.LastInsertId()
-	for _, a := range b.Authors {
-		res, err = db.Exec("Insert into authors(fname, mname, lname) values(?, ?, ?)", a.Fname, a.Mname, a.Lname)
-		if err != nil {
-			log.Fatal(err)
-		}
-		var a_id int
-		err = db.QueryRow("select id from authors where fname = ? and mname = ? and lname = ?", a.Fname, a.Mname, a.Lname).Scan(&a_id)
-		if err != nil {
-			log.Fatal(err)
-		}
-		res, err = db.Exec("Insert into booksauthors(bookid, authorid) values(?, ?)", b_id, a_id)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-
-	for _, genre := range b.Genres {
-		if genre == "" {
-			continue
-		}
-		res, err = db.Exec("Insert into genres(genre) values(?)", genre)
-		if err != nil {
-			log.Fatal(err)
-		}
-		var g_id int
-		err = db.QueryRow("select id from genres where genre = ?", genre).Scan(&g_id)
-		if err != nil {
-			log.Fatal(err)
-		}
-		res, err = db.Exec("Insert into booksgenres(bookid, genreid) values(?, ?)", b_id, g_id)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-	for _, s := range b.Sequences {
-		res, err = db.Exec("Insert into sequences(sequence) values(?)", s.Name)
-		if err != nil {
-			log.Fatal(err)
-		}
-		var s_id int
-		err = db.QueryRow("select id from sequences where sequence = ?", s.Name).Scan(&s_id)
-		if err != nil {
-			log.Fatal(err)
-		}
-		res, err = db.Exec("Insert into bookssequence(bookid, sequenceid, seqno) values(?, ?, ?)", b_id, s_id, s.Number)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-	tx.Commit()
-
+	return
 }
