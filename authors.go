@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -11,13 +10,17 @@ import (
 )
 
 type Person struct {
-	LRSId int
-	Fname string `xml:"first-name"`
-	Mname string `xml:"middle-name"`
-	Lname string `xml:"last-name"`
-	Nick  string `xml:"nickname"`
-	Email string `xml:"email"`
-	Id    string `xml:"id"`
+	LRSId       int
+	Fname       string `xml:"first-name"`
+	Mname       string `xml:"middle-name"`
+	Lname       string `xml:"last-name"`
+	Nick        string `xml:"nickname"`
+	Email       string `xml:"email"`
+	Id          string `xml:"id"`
+	Lang        string
+	Popularity  int
+	Genres      []string
+	BookCounter int
 }
 
 func NormalizeSpaces(arr string) string {
@@ -53,8 +56,9 @@ func (author Person) Fingerprint() string {
 }
 
 func (author Person) String() string {
-	return fmt.Sprintf("L:\"%s\", F:\"%s\", M:\"%s\"", author.Lname, author.Fname, author.Mname)
+	return fmt.Sprintf("%s %s %s, count: %d, origin: %s", author.Lname, author.Fname, author.Mname, author.BookCounter, author.Lang)
 }
+
 func (author Person) LongAuthorString() string {
 	cleanString := func(r rune) rune {
 		if unicode.IsLetter(r) {
@@ -73,7 +77,8 @@ type Counter struct {
 }
 
 type Counters []Counter
-type AuthorsCounter map[Person]int
+
+// type AuthorsCounter map[Person]int
 
 // Len is part of sort.Interface.
 func (a Counters) Len() int      { return len(a) }
@@ -112,42 +117,42 @@ func (a ByLength) Less(i, j int) bool {
 	return (len(a.Counters[i].Author.LongAuthorString()) > len(a.Counters[j].Author.LongAuthorString()))
 }
 
-func GenerateAuthorReplace(authorscounter AuthorsCounter) map[Person]Person {
-	ag := make(map[string]Counters)
-	AuthorsReplaceList := make(map[Person]Person)
+// func GenerateAuthorReplace(authorscounter AuthorsCounter) map[Person]Person {
+// 	ag := make(map[string]Counters)
+// 	AuthorsReplaceList := make(map[Person]Person)
 
-	for author, count := range authorscounter {
-		ind := author.Fingerprint()
-		// if group exists we look it throw to check if author is in it. If so - increment counter and return
-		// In other cases we add author to group
-		if len(ag[ind]) == 0 {
-			ag[ind] = append(ag[ind], Counter{Author: author, Count: count})
-			continue
-		}
+// 	for author, count := range authorscounter {
+// 		ind := author.Fingerprint()
+// 		// if group exists we look it throw to check if author is in it. If so - increment counter and return
+// 		// In other cases we add author to group
+// 		if len(ag[ind]) == 0 {
+// 			ag[ind] = append(ag[ind], Counter{Author: author, Count: count})
+// 			continue
+// 		}
 
-		for _, k := range ag[ind] {
-			if reflect.DeepEqual(k.Author, author) {
-				k.Count += count
-				continue
-			}
-		}
-		ag[ind] = append(ag[ind], Counter{Author: author, Count: count})
-	}
-	for _, k := range ag {
-		if len(k) == 1 {
-			continue
-		}
-		sort.Sort(ByLength{k})
-		fmt.Println(k)
-		for i := 1; i < len(k); i++ {
-			if k[i].Author.String() != k[0].Author.String() {
-				AuthorsReplaceList[k[i].Author] = k[0].Author
-			}
-		}
-	}
-	fmt.Println("Author correntions:")
-	for from, to := range AuthorsReplaceList {
-		fmt.Printf("Replace %v with %v\n", from, to)
-	}
-	return AuthorsReplaceList
-}
+// 		for _, k := range ag[ind] {
+// 			if reflect.DeepEqual(k.Author, author) {
+// 				k.Count += count
+// 				continue
+// 			}
+// 		}
+// 		ag[ind] = append(ag[ind], Counter{Author: author, Count: count})
+// 	}
+// 	for _, k := range ag {
+// 		if len(k) == 1 {
+// 			continue
+// 		}
+// 		sort.Sort(ByLength{k})
+// 		fmt.Println(k)
+// 		for i := 1; i < len(k); i++ {
+// 			if k[i].Author.String() != k[0].Author.String() {
+// 				AuthorsReplaceList[k[i].Author] = k[0].Author
+// 			}
+// 		}
+// 	}
+// 	fmt.Println("Author correntions:")
+// 	for from, to := range AuthorsReplaceList {
+// 		fmt.Printf("Replace %v with %v\n", from, to)
+// 	}
+// 	return AuthorsReplaceList
+// }

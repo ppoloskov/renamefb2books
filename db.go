@@ -2,10 +2,11 @@ package main
 
 import (
 	"database/sql"
-	sqlite "github.com/mattn/go-sqlite3"
+	"errors"
 	"log"
-	"strconv"
 	"strings"
+
+	sqlite "github.com/mattn/go-sqlite3"
 )
 
 const (
@@ -67,59 +68,185 @@ func OpenDB(dbpath string) (db *sql.DB, err error) {
 	}
 }
 
-func GetBookID(db *sql.DB, b *Book) (id int) {
+var ErrNoID = errors.New("No lib.rus.ec id was found")
+
+func (b *Book) GetIDbyMD5(db *sql.DB) error {
+	const md5q = `SELECT b.bid, COUNT(b.bid)
+		FROM  libbook b
+		WHERE b.md5 = ?`
+
+	var LREId, Count sql.NullInt64
+	if err := db.QueryRow(md5q, b.MD5).Scan(&LREId, &Count); err != nil {
+		return err
+	}
+	// if LREId > 0 && LREDeleted.Int64 == 1 {
+	// 	fmt.Println(LREId)
+	// 	const delq = `SELECT libjoinedbooks.GoodId
+	// 		FROM libbook
+	// 		LEFT JOIN libjoinedbooks ON libjoinedbooks.BadId = libbook.bid
+	// 		WHERE libbook.bid = ?
+	// 		AND libbook.FileType = 'fb2'`
+
+	// 	if err := db.QueryRow(delq, LREId).Scan(&LREId); err != nil {
+	// 		return err
+	// 	}
+	// }
+
+	if int(LREId.Int64) < 1 {
+		return ErrNoID
+	}
+
+	b.ID = int(LREId.Int64)
+	return nil
+}
+
+func (b *Book) GetIDbyTitle(db *sql.DB) error {
+	// If not found let's try to find it by name and authors last name
 	const q = `SELECT MAX(b.bid) FROM libbook b 
 		LEFT JOIN libavtor ON libavtor.bid = b.bid 
 		LEFT JOIN libavtors a ON libavtor.aid = a.aid 
-		WHERE upp(b.title) = upp(?) 
-		AND a.LastName = ? 
+		WHERE b.title = ? 
+		AND a.LastName = ?
 		AND b.Deleted != '1' 
 		AND b.FileType = 'fb2'`
 
-	var LREId string
-	err := db.QueryRow(q, b.Title, b.Authors[0].Lname).Scan(&LREId)
-	if err != nil {
-		log.Println(err)
-		// log.Fatal(err)
-		return (0)
+	var LREId sql.NullInt64
+	if err := db.QueryRow(q, b.Title, b.Authors[0].Lname).Scan(&LREId); err != nil {
+		return err
 	}
 
-	id, err = strconv.Atoi(LREId)
-	if err != nil {
-		return (0)
+	if LREId.Valid {
+		b.ID = int(LREId.Int64)
+		return nil
 	}
-
-	return (id)
+	return ErrNoID
 }
 
-func GetAuthors(db *sql.DB, id int) (Authors []Person) {
-	const GetAuthors = `SELECT a.aid, a.FirstName, a.MiddleName, a.LastName FROM libbook 
-			LEFT JOIN libavtor ON libavtor.bid = libbook.bid
-			LEFT JOIN libavtors a ON a.aid = libavtor.aid
-			WHERE libbook.bid = ? 
-			AND libbook.Deleted != '1' 
-			AND libbook.FileType = 'fb2'
-			AND libavtor.role = 'a'
-			ORDER BY title DESC`
+func (b *Book) GetTitle(db *sql.DB) error {
+	const titleq = `SELECT b.Title
+		FROM  libbook b
+		WHERE b.bid = ?`
 
-	rows, err := db.Query(GetAuthors, id)
+	var title string
+	if err := db.QueryRow(titleq, b.ID).Scan(&title); err != nil {
+		return err
+	}
+
+	b.CorrectTitle = title
+	return nil
+}
+
+func (b *Book) GetSeries(db *sql.DB) error {
+	const GetAuthorsSQL = `SELECT libseq.sid, seqname, sn, libseqs.type 
+			FROM 'libseqs'
+			INNER JOIN libseq ON libseqs.sid = libseq.sid
+			INNER JOIN libbook ON libseq.bid = libbook.bid 		
+			WHERE libbook.bid = ? 
+			AND libbook.FileType = 'fb2'`
+
+	rows, err := db.Query(GetAuthorsSQL, b.ID)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer rows.Close()
 
 	for rows.Next() {
-		p := &Person{}
-		err := rows.Scan(&p.LRSId, &p.Fname, &p.Mname, &p.Lname)
+		s := Sequence{}
+		var t string
+		err := rows.Scan(&s.LRSId, &s.Name, &s.Number, &t)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
-		Authors = append(Authors, *p)
+		if t == "a" {
+			b.CorrectAuthorSequences = append(b.CorrectAuthorSequences, s)
+		} else {
+			b.CorrectPublisherSequences = append(b.CorrectPublisherSequences, s)
+		}
+	}
+	err = rows.Err()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (b *Book) GetAuthors(db *sql.DB) error {
+	const getauthorsq = `SELECT a.aid, a.FirstName, a.MiddleName, a.LastName, a.NickName, l.srclang
+			FROM libbook 
+			JOIN libavtor ON libavtor.bid = libbook.bid
+			JOIN libavtors a ON a.aid = libavtor.aid
+			LEFT JOIN libsrclang AS l ON l.bid = libbook.bid
+			WHERE libbook.bid = ?
+			AND libbook.FileType = 'fb2'
+			AND libavtor.role = 'a'
+			ORDER BY title DESC`
+
+	rows, err := db.Query(getauthorsq, b.ID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		p := Person{}
+		var orig sql.NullString
+
+		err := rows.Scan(&p.LRSId, &p.Fname, &p.Mname, &p.Lname, &p.Nick, &orig)
+		if err != nil {
+			return err
+		}
+
+		if orig.Valid {
+			if orig.String == "ru" {
+				p.Lang = "rus"
+			} else {
+				p.Lang = "for"
+			}
+		}
+		b.CorrectAuthors = append(b.CorrectAuthors, p)
+	}
+	err = rows.Err()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (a *Person) GetPopGenres(db *sql.DB) error {
+	const GetGenres = `SELECT code, COUNT(code) FROM libavtors
+			INNER JOIN libavtor ON libavtors.aid = libavtor.aid 
+			INNER JOIN libbook ON libavtor.bid = libbook.bid 
+			INNER JOIN libgenre ON libgenre.bid = libbook.bid 
+			INNER JOIN libgenres ON libgenre.gid = libgenres.gid 
+			WHERE libavtors.aid = ?
+			AND libbook.Deleted != 1
+			GROUP BY code
+			ORDER BY count(code) DESC
+			LIMIT 5
+	`
+
+	rows, err := db.Query(GetGenres, a.LRSId)
+	defer rows.Close()
+	if err != nil {
+		log.Fatal(err)
+		return err
+	}
+
+	for rows.Next() {
+		var g string
+		var c int
+		if err := rows.Scan(&g, &c); err != nil {
+			log.Fatal(err)
+			return err
+		}
+		a.Genres = append(a.Genres, g)
 	}
 	err = rows.Err()
 	if err != nil {
 		log.Fatal(err)
+		return err
 	}
-
-	return
+	return nil
 }
